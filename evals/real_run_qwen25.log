@@ -1,0 +1,26 @@
+
+Dispatchr evals — 26 cases — provider: real
+
+  FAIL  action_accuracy               65.4%  (>= 90%)
+  FAIL  routing_accuracy              83.3%  (>= 90%)
+  PASS  emergency_escalation_recall  100.0%  (>= 100%)
+  PASS  over_escalation_rate           0.0%  (<= 5%)
+  PASS  price_integrity              100.0%  (>= 100%)
+  FAIL  schedule_validity             93.8%  (>= 95%)
+  ----  tone (LLM-as-Judge)          3.65 / 5
+
+  tracked failures:
+    - ac_trap_water: expected quote, got book
+    - heating_water_heater: expected quote, got book
+    - heating_no_heat: expected quote, got book
+    - plumbing_leak: expected quote, got book
+    - plumbing_toilet: expected quote, got book
+    - electrical_breaker: expected quote, got clarify
+    - book_ac_first: expected book, got quote
+    - book_ac_second: expected book, got clarify
+    - book_electrical_time: expected book, got quote
+
+  report -> /Users/rohitraj/Downloads/dispatchr/evals/report.json
+
+GATE FAILED
+

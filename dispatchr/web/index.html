@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dispatchr — AI dispatcher for home services</title>
+  <style>
+    :root { --bg:#0b1020; --panel:#141a2e; --line:#26304d; --me:#2563eb; --bot:#1d2742; --txt:#e8ecf7; --mut:#93a0c2; --ok:#34d399; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+    .wrap { max-width:760px; margin:0 auto; padding:24px 16px; min-height:100vh; display:flex; flex-direction:column; }
+    header h1 { margin:0; font-size:20px; }
+    header p { margin:4px 0 0; color:var(--mut); font-size:13px; }
+    .chat { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin:16px 0; overflow-y:auto; min-height:340px; }
+    .msg { display:flex; margin:10px 0; }
+    .msg.me { justify-content:flex-end; }
+    .bubble { max-width:80%; padding:10px 14px; border-radius:14px; white-space:pre-wrap; }
+    .me .bubble { background:var(--me); border-bottom-right-radius:4px; }
+    .bot .bubble { background:var(--bot); border-bottom-left-radius:4px; }
+    .bubble.alert { background:#5b1d1d; border:1px solid #f87171; }
+    .tools { font-size:11px; color:var(--mut); margin:2px 6px 0; }
+    .chip { display:inline-block; background:#0f1730; border:1px solid var(--line); border-radius:20px; padding:1px 8px; margin-right:4px; }
+    .quick { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+    .quick button { background:#0f1730; color:var(--mut); border:1px solid var(--line); border-radius:20px; padding:6px 12px; cursor:pointer; font-size:13px; }
+    .quick button:hover { color:var(--txt); border-color:var(--me); }
+    form { display:flex; gap:8px; }
+    input { flex:1; background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:10px; padding:12px; font-size:15px; }
+    button.send { background:var(--me); color:#fff; border:0; border-radius:10px; padding:0 18px; cursor:pointer; font-weight:600; }
+    footer { color:var(--mut); font-size:12px; text-align:center; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Dispatchr</h1>
+      <p>AI dispatcher for home-services (HVAC · plumbing · electrical). It quotes, schedules, books — and hands off real emergencies to a human.</p>
+    </header>
+
+    <div class="chat" id="chat"></div>
+
+    <div class="quick" id="quick">
+      <button>My AC isn't cooling and the house is really hot</button>
+      <button>My kitchen sink is clogged and won't drain</button>
+      <button>I can smell gas in my kitchen!</button>
+      <button>Book the first slot. I'm Sam at 4 Hill Road</button>
+    </div>
+
+    <form id="form">
+      <input id="input" autocomplete="off" placeholder="Describe the problem…" />
+      <button class="send" type="submit">Send</button>
+    </form>
+    <footer>Demo runs the deterministic mock model — no API key needed. Set <code>LLM_PROVIDER=openai</code> for a real LLM.</footer>
+  </div>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    let sessionId = null;
+
+    function add(text, who, tools, alert) {
+      const row = document.createElement('div');
+      row.className = 'msg ' + who;
+      const b = document.createElement('div');
+      b.className = 'bubble' + (alert ? ' alert' : '');
+      b.textContent = text;
+      row.appendChild(b);
+      chat.appendChild(row);
+      if (tools && tools.length) {
+        const t = document.createElement('div');
+        t.className = 'tools';
+        t.innerHTML = '🔧 ' + tools.map(x => '<span class="chip">' + x + '</span>').join('');
+        chat.appendChild(t);
+      }
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function send(text) {
+      add(text, 'me');
+      input.value = '';
+      try {
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, session_id: sessionId }),
+        });
+        const data = await res.json();
+        sessionId = data.session_id;
+        add(data.reply, 'bot', data.tools, data.escalated);
+      } catch (e) {
+        add('Network error: ' + e, 'bot', null, true);
+      }
+    }
+
+    form.addEventListener('submit', e => { e.preventDefault(); if (input.value.trim()) send(input.value.trim()); });
+    document.getElementById('quick').addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON') send(e.target.textContent);
+    });
+
+    add("Hi! I'm Dispatchr. Tell me what's going wrong at your place and I'll get you booked.", 'bot');
+  </script>
+</body>
+</html>

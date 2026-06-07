@@ -1,0 +1,6 @@
+[
+  {"id": "t1", "name": "Rahul", "skills": ["ac_repair", "installation"], "zone": "north"},
+  {"id": "t2", "name": "Priya", "skills": ["plumbing"], "zone": "south"},
+  {"id": "t3", "name": "Arjun", "skills": ["electrical"], "zone": "east"},
+  {"id": "t4", "name": "Sana",  "skills": ["heating_repair", "ac_repair"], "zone": "central"}
+]

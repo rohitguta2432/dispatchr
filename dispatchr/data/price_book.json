@@ -1,0 +1,7 @@
+{
+  "ac_repair":      {"label": "AC repair",      "diagnostic_fee": 800, "repair_low": 2000, "repair_high": 4000, "currency": "INR"},
+  "heating_repair": {"label": "Heating repair", "diagnostic_fee": 800, "repair_low": 1800, "repair_high": 3500, "currency": "INR"},
+  "plumbing":       {"label": "Plumbing",       "diagnostic_fee": 500, "repair_low": 1200, "repair_high": 3000, "currency": "INR"},
+  "electrical":     {"label": "Electrical",     "diagnostic_fee": 600, "repair_low": 1500, "repair_high": 3500, "currency": "INR"},
+  "installation":   {"label": "Installation",   "diagnostic_fee": 0,   "repair_low": 3500, "repair_high": 9000, "currency": "INR"}
+}
