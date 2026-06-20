@@ -1,9 +1,9 @@
 """Dispatchr as an MCP server.
 
-Exposes the same four dispatcher tools over the Model Context Protocol, so any
+Exposes the same six dispatcher tools over the Model Context Protocol, so any
 MCP client (Claude Desktop, an IDE, another agent) can quote, schedule, book,
-and escalate — not just the built-in agent loop. The tools share one in-memory
-calendar for the life of the process.
+cancel, reschedule, and escalate — not just the built-in agent loop. The tools
+share one in-memory calendar for the life of the process.
 
 Run over stdio:
 
@@ -52,9 +52,25 @@ def find_available_slots(job_type: str, limit: int = 3) -> dict[str, Any]:
 
 
 @mcp.tool()
-def book_job(slot_id: str, customer_name: str, address: str, problem: str) -> dict[str, Any]:
-    """Book a specific available slot (from find_available_slots) for the customer."""
-    return _tools.book_job(slot_id, customer_name, address, problem)
+def book_job(slot_id: str, customer_name: str, address: str, problem: str,
+             job_type: str | None = None) -> dict[str, Any]:
+    """Book a specific available slot (from find_available_slots) for the customer.
+
+    Pass job_type (the classified job) so the booking can be rescheduled safely later.
+    """
+    return _tools.book_job(slot_id, customer_name, address, problem, job_type)
+
+
+@mcp.tool()
+def cancel_job(booking_id: str) -> dict[str, Any]:
+    """Cancel an existing booking by its booking_id (e.g. BK-1000) and free the slot."""
+    return _tools.cancel_job(booking_id)
+
+
+@mcp.tool()
+def reschedule_job(booking_id: str, new_slot_id: str) -> dict[str, Any]:
+    """Move an existing booking to a different open slot (from find_available_slots), freeing the old one."""
+    return _tools.reschedule_job(booking_id, new_slot_id)
 
 
 @mcp.tool()

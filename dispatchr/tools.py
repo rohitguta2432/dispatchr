@@ -94,7 +94,8 @@ class Tools:
                 break
         return {"job_type": job_type, "slots": matches}
 
-    def book_job(self, slot_id: str, customer_name: str, address: str, problem: str) -> dict[str, Any]:
+    def book_job(self, slot_id: str, customer_name: str, address: str, problem: str,
+                 job_type: str | None = None) -> dict[str, Any]:
         slot = self._slots.get(slot_id)
         if slot is None:
             return {"error": f"unknown slot_id '{slot_id}'"}
@@ -104,6 +105,9 @@ class Tools:
         booking_id = f"BK-{1000 + len(self._bookings)}"
         booking = {
             "booking_id": booking_id,
+            "status": "booked",
+            "slot_id": slot_id,
+            "job_type": job_type,
             "technician_name": slot["technician_name"],
             "window": slot["label"],
             "customer_name": customer_name,
@@ -111,7 +115,51 @@ class Tools:
             "problem": problem,
         }
         self._bookings[booking_id] = booking
-        return {"status": "booked", **booking}
+        return dict(booking)
+
+    def cancel_job(self, booking_id: str) -> dict[str, Any]:
+        """Cancel an existing booking and free its slot so others can take it."""
+        booking = self._bookings.get(booking_id)
+        if booking is None:
+            return {"error": f"unknown booking_id '{booking_id}'"}
+        if booking["status"] == "cancelled":
+            return {"status": "cancelled", "booking_id": booking_id,
+                    "message": "This booking was already cancelled.", "already": True}
+        self._booked.discard(booking["slot_id"])
+        booking["status"] = "cancelled"
+        return {
+            "status": "cancelled",
+            "booking_id": booking_id,
+            "technician_name": booking["technician_name"],
+            "window": booking["window"],
+        }
+
+    def reschedule_job(self, booking_id: str, new_slot_id: str) -> dict[str, Any]:
+        """Move an existing booking to a different open slot, freeing the old one."""
+        booking = self._bookings.get(booking_id)
+        if booking is None:
+            return {"error": f"unknown booking_id '{booking_id}'"}
+        if booking["status"] == "cancelled":
+            return {"error": f"booking '{booking_id}' was cancelled — please make a new booking"}
+        new_slot = self._slots.get(new_slot_id)
+        if new_slot is None:
+            return {"error": f"unknown slot_id '{new_slot_id}'"}
+        if new_slot_id != booking["slot_id"] and new_slot_id in self._booked:
+            return {"error": f"slot '{new_slot_id}' is already booked"}
+        job_type = booking.get("job_type")
+        if job_type and job_type not in new_slot["skills"]:
+            return {"error": f"the technician for slot '{new_slot_id}' can't do {job_type}"}
+        self._booked.discard(booking["slot_id"])
+        self._booked.add(new_slot_id)
+        booking["slot_id"] = new_slot_id
+        booking["technician_name"] = new_slot["technician_name"]
+        booking["window"] = new_slot["label"]
+        return {
+            "status": "rescheduled",
+            "booking_id": booking_id,
+            "technician_name": new_slot["technician_name"],
+            "window": new_slot["label"],
+        }
 
     def escalate_to_human(self, reason: str, summary: str = "") -> dict[str, Any]:
         return {
@@ -127,6 +175,8 @@ class Tools:
             "get_price_estimate": self.get_price_estimate,
             "find_available_slots": self.find_available_slots,
             "book_job": self.book_job,
+            "cancel_job": self.cancel_job,
+            "reschedule_job": self.reschedule_job,
             "escalate_to_human": self.escalate_to_human,
         }.get(name)
         if fn is None:
@@ -180,8 +230,40 @@ def tool_schemas() -> list[dict[str, Any]]:
                         "customer_name": {"type": "string"},
                         "address": {"type": "string"},
                         "problem": {"type": "string"},
+                        "job_type": {"type": "string", "enum": JOB_TYPES,
+                                     "description": "The classified job type, so the booking can be rescheduled safely."},
                     },
                     "required": ["slot_id", "customer_name", "address", "problem"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "cancel_job",
+                "description": "Cancel an existing booking (by its booking_id, e.g. BK-1000) and free the slot. "
+                "Use when the customer asks to cancel or call off their appointment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"booking_id": {"type": "string"}},
+                    "required": ["booking_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "reschedule_job",
+                "description": "Move an existing booking to a different open slot, freeing the old one. "
+                "Use when the customer asks to reschedule or change their appointment time. "
+                "new_slot_id must come from find_available_slots.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "booking_id": {"type": "string"},
+                        "new_slot_id": {"type": "string"},
+                    },
+                    "required": ["booking_id", "new_slot_id"],
                 },
             },
         },

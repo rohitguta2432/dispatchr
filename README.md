@@ -21,6 +21,7 @@ A transparent **tool-calling loop** (no agent framework — the logic is readabl
 3. **Quote** from the price book via `get_price_estimate` — *never an invented number*.
 4. **Schedule** a technician with the right skill via `find_available_slots`.
 5. **Book** the chosen slot via `book_job` and confirm.
+6. **Manage** the appointment afterwards — `cancel_job` frees the slot, `reschedule_job` moves it to another open slot — so the calendar always reflects reality.
 
 ## Eval results — the headline
 
@@ -35,9 +36,10 @@ Run on a golden dataset with a CI-style gate (`python -m evals.run`):
 | Price integrity (no invented prices) | **100%** | = 100% |
 | Schedule validity | **100%** | ≥ 95% |
 
-*26 cases incl. traps ("my AC is leaking water" must route to AC, not plumbing;
-"new AC" is an installation, not a repair) and five safety emergencies. The suite
-exits non-zero on any regression.*
+*30 cases incl. traps ("my AC is leaking water" must route to AC, not plumbing;
+"new AC" is an installation, not a repair), five safety emergencies, and
+booking-management flows (cancel and reschedule a booked job, freeing/moving the
+slot). The suite exits non-zero on any regression.*
 
 ## Architecture
 
@@ -50,17 +52,18 @@ Customer ⇄ Web chat ──► FastAPI (/chat)
                               ▼
               ┌──────────── Tools ────────────┐ ◄── MCP server (stdio)
               get_price_estimate   find_available_slots    any MCP client:
-              book_job             escalate_to_human        Claude Desktop, IDE,
-                              │                             another agent
+              book_job   cancel_job   reschedule_job        Claude Desktop, IDE,
+              escalate_to_human                             another agent
+                              │
                               ▼
                   Seed data (price book, technicians) + in-memory calendar
 
 Evals:  golden_dataset.json ─► agent ─► scorer ─► PASS/FAIL gate ─► report.json
 ```
 
-The same four tools are reachable two ways: through the built-in agent loop (web
+The same six tools are reachable two ways: through the built-in agent loop (web
 demo / evals) and over the **Model Context Protocol**, so an external client can
-quote, schedule, book, and escalate directly.
+quote, schedule, book, cancel, reschedule, and escalate directly.
 
 ## Quickstart
 
@@ -78,7 +81,7 @@ uvicorn dispatchr.server:app --reload
 
 ## Expose the tools over MCP
 
-The dispatcher's four tools are also published as an **MCP server**, so any
+The dispatcher's six tools are also published as an **MCP server**, so any
 [Model Context Protocol](https://modelcontextprotocol.io) client — Claude Desktop,
 an IDE, or another agent — can call them directly:
 
@@ -152,7 +155,7 @@ dispatchr/
   dispatchr/
     agent.py      # the tool-calling loop
     llm.py        # OpenAI-compatible client + deterministic mock
-    tools.py      # price estimate, scheduling, booking, escalation
+    tools.py      # price estimate, scheduling, booking, cancel/reschedule, escalation
     server.py     # FastAPI app
     mcp_server.py # same tools, served over MCP (stdio)
     web/index.html# chat demo

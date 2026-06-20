@@ -59,3 +59,31 @@ identical `Tools` implementation and `JOB_TYPES` the agent loop and evals alread
   escalation-first ordering — so the *client's* model owns that judgement. The tool
   docstrings carry the safety guidance (e.g. "always call get_price_estimate before
   quoting") to mitigate this.
+
+## ADR-004 — Booking lifecycle: cancel and reschedule
+
+**Context.** A dispatcher's job doesn't end at "booked" — the most common follow-up
+in field-services software is *"cancel"* or *"move my appointment"*. The original
+tools only ever *added* a booking and the in-memory calendar never released a slot,
+so a cancelled job silently kept its technician blocked.
+
+**Decision.** Add two tools to the single source of truth in
+[`tools.py`](dispatchr/tools.py): `cancel_job(booking_id)` and
+`reschedule_job(booking_id, new_slot_id)`. Each booking now carries a `status`,
+its `slot_id`, and its `job_type`, so cancel can free the slot and reschedule can
+move it while re-validating that the new slot's technician has the required skill.
+The deterministic mock learns the intent ("cancel" / "reschedule" / "move it") and
+remembers the customer's *earlier* slot choice, so a later turn can act on the
+existing booking. The eval gate gains a `cancel` and `reschedule` action plus four
+golden cases (30 total) that assert the slot is actually freed/moved.
+
+**Consequences.**
+- The calendar stays truthful: a cancelled slot is immediately bookable again, and a
+  reschedule never double-books or drops the original hold.
+- Skill safety is preserved on reschedule — you can't move an AC job onto a
+  plumber's slot (the tool rejects it), mirroring the booking-time guarantee.
+- Same one-tool-layer story as ADR-003: the new capabilities appear in the agent
+  loop, the web demo, the eval gate, *and* every MCP client at once.
+- Trade-off: the mock identifies bookings by the single booking made in a
+  conversation; multi-booking management would need explicit booking-id tracking in
+  the dialogue, which is left for a real-LLM/stateful-session follow-up.

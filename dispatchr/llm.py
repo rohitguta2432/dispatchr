@@ -90,6 +90,25 @@ def _classify(text: str) -> str | None:
     return None
 
 
+_CANCEL = [
+    "cancel", "call it off", "call off", "scrap the booking", "scrap the appointment",
+    "don't need it", "do not need it", "no longer need",
+]
+_RESCHEDULE = [
+    "reschedule", "resched", "move it", "move my", "move the appointment",
+    "change the time", "change my appointment", "different time", "another time",
+    "push it", "switch me", "switch to a", "rebook",
+]
+
+
+def _wants_cancel(text: str) -> bool:
+    return any(k in text for k in _CANCEL)
+
+
+def _wants_reschedule(text: str) -> bool:
+    return any(k in text for k in _RESCHEDULE)
+
+
 def _money(n: int) -> str:
     return f"₹{n:,}"
 
@@ -124,6 +143,27 @@ def _extract_contact(text: str) -> tuple[str, str]:
     name = name_m.group(1) if name_m else "Customer"
     address = addr_m.group(1).strip() if addr_m else "(address to confirm)"
     return name, address
+
+
+def _booking_message(user_msgs: list[str], slots: list[dict[str, Any]]) -> str | None:
+    """The customer turn that chose a slot to BOOK — the latest message with a slot
+    cue that isn't itself a cancel/reschedule request. Lets the agent remember an
+    earlier booking choice when a later turn asks to cancel or move it."""
+    chosen: str | None = None
+    for m in user_msgs:
+        low = m.lower()
+        if _wants_cancel(low) or _wants_reschedule(low):
+            continue
+        if _pick_slot(m, slots) is not None:
+            chosen = m
+    return chosen
+
+
+def _reschedule_message(user_msgs: list[str]) -> str | None:
+    for m in reversed(user_msgs):
+        if _wants_reschedule(m.lower()):
+            return m
+    return None
 
 
 class MockLLM:
@@ -174,18 +214,50 @@ class MockLLM:
         slots = results.get("find_available_slots", {}).get("slots", [])
 
         if "book_job" not in done:
-            chosen = _pick_slot(last_user, slots)
+            bmsg = _booking_message(user_msgs, slots)
+            chosen = _pick_slot(bmsg, slots) if bmsg else None
             if chosen is not None:
-                name, address = _extract_contact(last_user)
+                name, address = _extract_contact(bmsg)
                 return AssistantTurn(tool_calls=[ToolCall(name="book_job", arguments={
                     "slot_id": chosen["slot_id"],
                     "customer_name": name,
                     "address": address,
                     "problem": first_user[:200],
+                    "job_type": job_type,
                 })])
             return AssistantTurn(content=_compose_offer(results.get("get_price_estimate", {}), slots))
 
         booking = results.get("book_job", {})
+
+        # Booking exists — honour a cancel/reschedule request before confirming.
+        if booking.get("status") == "booked":
+            booking_id = booking.get("booking_id")
+            if _wants_cancel(all_text) and "cancel_job" not in done:
+                return AssistantTurn(tool_calls=[ToolCall(
+                    name="cancel_job", arguments={"booking_id": booking_id})])
+            if _wants_reschedule(all_text) and "reschedule_job" not in done:
+                rmsg = _reschedule_message(user_msgs) or last_user
+                target = _pick_slot(rmsg, slots)
+                if target is not None and target["slot_id"] != booking.get("slot_id"):
+                    return AssistantTurn(tool_calls=[ToolCall(name="reschedule_job", arguments={
+                        "booking_id": booking_id, "new_slot_id": target["slot_id"]})])
+                return AssistantTurn(content=(
+                    "Happy to move it — which of the times I offered would you prefer?"))
+
+        cancelled = results.get("cancel_job", {})
+        if cancelled.get("status") == "cancelled":
+            return AssistantTurn(content=(
+                f"Done — booking {cancelled['booking_id']} is cancelled and that slot is freed up. "
+                "If you'd like to rebook later, just let me know."
+            ))
+
+        rescheduled = results.get("reschedule_job", {})
+        if rescheduled.get("status") == "rescheduled":
+            return AssistantTurn(content=(
+                f"All set — I've moved booking {rescheduled['booking_id']} to "
+                f"{rescheduled['window']} with {rescheduled['technician_name']}. Anything else?"
+            ))
+
         if booking.get("status") == "booked":
             return AssistantTurn(content=(
                 f"Booked! {booking['technician_name']} will arrive {booking['window']}. "

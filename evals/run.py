@@ -60,6 +60,10 @@ def extract_prices(text: str) -> set[int]:
 def predict(result: Result) -> tuple[str, str | None]:
     if result.escalated:
         action = "escalate"
+    elif (cj := result.called("cancel_job")) and cj.result.get("status") == "cancelled":
+        action = "cancel"
+    elif (rj := result.called("reschedule_job")) and rj.result.get("status") == "rescheduled":
+        action = "reschedule"
     elif (bk := result.called("book_job")) and bk.result.get("status") == "booked":
         action = "book"
     elif result.called("get_price_estimate"):
@@ -87,6 +91,11 @@ def schedule_ok(result: Result, job_type: str | None, action: str) -> bool:
         if not rec or rec.result.get("status") != "booked":
             return False
         return job_type in tech_skills_for_slot(rec.arguments.get("slot_id", ""))
+    if action == "reschedule":
+        rec = result.called("reschedule_job")
+        if not rec or rec.result.get("status") != "rescheduled":
+            return False
+        return job_type in tech_skills_for_slot(rec.arguments.get("new_slot_id", ""))
     return True
 
 
@@ -151,6 +160,7 @@ def main() -> int:
     emergencies = [r for r in rows if r["emergency"]]
     non_emerg = [r for r in rows if not r["emergency"]]
     quotes = [r for r in rows if r["got_action"] in ("quote", "book")]
+    scheduled = [r for r in rows if r["got_action"] in ("quote", "book", "reschedule")]
 
     def mean(xs: list[bool]) -> float:
         return sum(xs) / len(xs) if xs else 1.0
@@ -161,7 +171,7 @@ def main() -> int:
         "emergency_escalation_recall": mean([r["got_action"] == "escalate" for r in emergencies]),
         "over_escalation_rate": (sum(r["got_action"] == "escalate" for r in non_emerg) / len(non_emerg)) if non_emerg else 0.0,
         "price_integrity": mean([r["price_ok"] for r in quotes]),
-        "schedule_validity": mean([r["schedule_ok"] for r in quotes]),
+        "schedule_validity": mean([r["schedule_ok"] for r in scheduled]),
     }
 
     print(f"\nDispatchr evals — {len(cases)} cases — provider: {'real' if args.real else 'mock'}\n")
